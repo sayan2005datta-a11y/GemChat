@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gemini Multimodal Chat</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background-color: #1a1a1a;
+      color: #e0e0e0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+    .container {
+      max-width: 900px;
+      width: 100%;
+      margin: auto;
+      display: flex;
+      flex-direction: column;
+      flex-grow: 1;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+    h1 {
+      text-align: center;
+      color: #ffffff;
+      font-weight: 400;
+      margin-bottom: 30px;
+      font-size: 2em;
+    }
+    #chat-history {
+      flex-grow: 1;
+      padding: 15px;
+      margin-bottom: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+    .message-row { display: flex; }
+    .message-row.user { justify-content: flex-end; }
+    .message-row.ai { justify-content: flex-start; }
+    .message-bubble {
+      max-width: 70%;
+      padding: 12px 18px;
+      border-radius: 20px;
+      line-height: 1.5;
+      word-wrap: break-word;
+    }
+    .message-bubble.user {
+      background-color: #007bff;
+      color: white;
+      border-bottom-right-radius: 5px;
+    }
+    .message-bubble.ai {
+      background-color: #333333;
+      color: #e0e0e0;
+      border-bottom-left-radius: 5px;
+    }
+    .input-area {
+      margin-top: auto;
+    }
+    #file-preview {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 0 15px 10px 55px;
+    }
+    .file-tag {
+      background-color: #555;
+      color: white;
+      padding: 5px 10px;
+      border-radius: 15px;
+      font-size: 0.8em;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .file-tag span {
+      cursor: pointer;
+      font-weight: bold;
+    }
+    .input-container {
+      display: flex;
+      align-items: center;
+      background-color: #333333;
+      border-radius: 25px;
+      padding: 8px 15px;
+    }
+    .input-container button {
+      background: none;
+      border: none;
+      color: #999;
+      font-size: 1.5em;
+      cursor: pointer;
+      padding: 5px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .input-container button:hover { color: #e0e0e0; }
+    #send-btn {
+      background-color: #007bff;
+      color: white;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      font-size: 1.2em;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-left: 10px;
+    }
+    #send-btn:disabled { background-color: #555; cursor: not-allowed; }
+    #user-input {
+      flex-grow: 1;
+      border: none;
+      background-color: transparent;
+      color: #e0e0e0;
+      padding: 10px 15px;
+      font-size: 1em;
+      outline: none;
+    }
+    #user-input::placeholder { color: #888888; }
+  </style>
+
+  <!-- Markdown + Syntax Highlight -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js/lib/common.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js/styles/github-dark.min.css">
+  <script>
+    marked.setOptions({
+      highlight: function(code, lang) {
+        if (hljs.getLanguage(lang)) {
+          return hljs.highlight(code, { language: lang }).value;
+        }
+        return hljs.highlightAuto(code).value;
+      }
+    });
+  </script>
+</head>
+<body>
+  <div class="container">
+    <h1>What can I help with?</h1>
+    <div id="chat-history"></div>
+
+    <div class="input-area">
+      <div id="file-preview"></div>
+      <form id="chat-form">
+        <div class="input-container">
+          <input type="file" id="file-upload" multiple style="display: none;">
+          <button type="button" id="file-input-btn">➕</button>
+          <input type="text" id="user-input" placeholder="Ask anything">
+          <button type="button" id="microphone-btn">🎙️</button>
+          <button type="submit" id="send-btn">➤</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const chatHistory = document.getElementById("chat-history");
+    const userInput = document.getElementById("user-input");
+    const fileUpload = document.getElementById("file-upload");
+    const fileInputBtn = document.getElementById("file-input-btn");
+    const filePreview = document.getElementById("file-preview");
+    const chatForm = document.getElementById("chat-form");
+    const microphoneBtn = document.getElementById("microphone-btn");
+    let selectedFiles = [];
+
+    function displayMessage(sender, message) {
+      const row = document.createElement("div");
+      row.classList.add("message-row", sender);
+      const bubble = document.createElement("div");
+      bubble.classList.add("message-bubble", sender);
+      if (sender === "ai") {
+        bubble.innerHTML = marked.parse(message);
+      } else {
+        bubble.textContent = message;
+      }
+      row.appendChild(bubble);
+      chatHistory.appendChild(row);
+      chatHistory.scrollTop = chatHistory.scrollHeight;
+    }
+
+    function renderFilePreview() {
+      filePreview.innerHTML = "";
+      selectedFiles.forEach((file, index) => {
+        const tag = document.createElement("div");
+        tag.classList.add("file-tag");
+        tag.innerHTML = `${file.name} <span onclick="removeFile(${index})">x</span>`;
+        filePreview.appendChild(tag);
+      });
+    }
+
+    function addFiles(newFiles) {
+      selectedFiles = [...selectedFiles, ...Array.from(newFiles)];
+      renderFilePreview();
+      fileUpload.value = "";
+    }
+
+    function removeFile(index) {
+      selectedFiles.splice(index, 1);
+      renderFilePreview();
+    }
+
+    async function sendMessage() {
+      const text = userInput.value.trim();
+      if (!text && selectedFiles.length === 0) return;
+
+      displayMessage("user", text || `(Sent ${selectedFiles.length} file(s))`);
+
+      const formData = new FormData();
+      formData.append("message", text);
+      selectedFiles.forEach(file => formData.append("files", file));
+
+      userInput.value = "";
+      selectedFiles = [];
+      renderFilePreview();
+
+      const res = await fetch("/chat", { method: "POST", body: formData });
+      const data = await res.json();
+      displayMessage("ai", data.reply);
+    }
+
+    chatForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      sendMessage();
+    });
+
+    fileInputBtn.addEventListener("click", () => fileUpload.click());
+    fileUpload.addEventListener("change", e => addFiles(e.target.files));
+
+    // 🎙 Voice input
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.lang = "en-US";
+      recognition.interimResults = false;
+      let isRecording = false;
+
+      microphoneBtn.addEventListener("click", () => {
+        if (isRecording) {
+          recognition.stop();
+        } else {
+          recognition.start();
+        }
+      });
+
+      recognition.onstart = () => {
+        isRecording = true;
+        microphoneBtn.style.color = "red";
+      };
+      recognition.onend = () => {
+        isRecording = false;
+        microphoneBtn.style.color = "#999";
+      };
+      recognition.onresult = (event) => {
+        userInput.value = event.results[0][0].transcript;
+      };
+    } else {
+      microphoneBtn.style.display = "none";
+    }
+  </script>
+</body>
+</html>
